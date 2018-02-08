@@ -483,9 +483,6 @@ public class FFmpegFrameGrabber extends FrameGrabber {
             while (this.timestamp < timestamp - 1 && grabFrame(true, true, false, false) != null && count++ < 1000) {
                 // decode up to the desired frame
             }
-            /*if (video_c != null) {
-                frameGrabbed = true;
-            }*/
         }
     }
 
