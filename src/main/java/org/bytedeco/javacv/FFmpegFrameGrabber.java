@@ -210,7 +210,7 @@ public class FFmpegFrameGrabber extends FrameGrabber {
         }
 
         got_frame     = null;
-        frameGrabbed  = false;
+        grabbedFrameType = FrameType.EMPTY;
         frame         = null;
         timestamp     = 0;
         frameNumber   = 0;
@@ -315,8 +315,8 @@ public class FFmpegFrameGrabber extends FrameGrabber {
     private SwsContext      img_convert_ctx;
     private SwrContext      samples_convert_ctx;
     private int             samples_channels, samples_format, samples_rate;
-    private boolean         frameGrabbed;
     private Frame           frame;
+    private FrameType       grabbedFrameType;
 
     @Override public double getGamma() {
         // default to a gamma of 2.2 for cheap Webcams, DV cameras, etc.
@@ -483,9 +483,9 @@ public class FFmpegFrameGrabber extends FrameGrabber {
             while (this.timestamp < timestamp - 1 && grabFrame(true, true, false, false) != null && count++ < 1000) {
                 // decode up to the desired frame
             }
-            if (video_c != null) {
+            /*if (video_c != null) {
                 frameGrabbed = true;
-            }
+            }*/
         }
     }
 
@@ -518,7 +518,7 @@ public class FFmpegFrameGrabber extends FrameGrabber {
         pkt2            = new AVPacket();
         sizeof_pkt      = pkt.sizeof();
         got_frame       = new int[1];
-        frameGrabbed    = false;
+        grabbedFrameType = FrameType.EMPTY;
         frame           = new Frame();
         timestamp       = 0;
         frameNumber     = 0;
@@ -905,6 +905,7 @@ public class FFmpegFrameGrabber extends FrameGrabber {
         if (oc == null || oc.isNull()) {
             throw new Exception("Could not grab: No AVFormatContext. (Has start() been called?)");
         } else if ((!doVideo || video_st == null) && (!doAudio || audio_st == null)) {
+            grabbedFrameType = FrameType.EMPTY;
             return null;
         }
         frame.keyFrame = false;
@@ -918,14 +919,21 @@ public class FFmpegFrameGrabber extends FrameGrabber {
         frame.audioChannels = 0;
         frame.samples = null;
         frame.opaque = null;
-        if (doVideo && frameGrabbed) {
-            frameGrabbed = false;
+        if (doVideo && FrameType.VIDEO.equals(grabbedFrameType)) {
             if (processImage) {
                 processImage();
             }
             frame.keyFrame = picture.key_frame() != 0;
             frame.image = image_buf;
             frame.opaque = picture;
+            grabbedFrameType = FrameType.EMPTY;
+            return frame;
+        } else if (doAudio && FrameType.AUDIO.equals(grabbedFrameType)) {
+            // processSamples() has been called for audio stream by default 
+            frame.timestamp = timestamp;
+            frame.keyFrame = samples_frame.key_frame() != 0;
+            frame.opaque = samples_frame;
+            grabbedFrameType = FrameType.EMPTY;
             return frame;
         }
         boolean done = false;
@@ -939,6 +947,7 @@ public class FFmpegFrameGrabber extends FrameGrabber {
                         pkt.data(null);
                         pkt.size(0);
                     } else {
+                        grabbedFrameType = FrameType.EMPTY;
                         return null;
                     }
                 }
@@ -966,7 +975,9 @@ public class FFmpegFrameGrabber extends FrameGrabber {
                     frame.keyFrame = picture.key_frame() != 0;
                     frame.image = image_buf;
                     frame.opaque = picture;
+                    grabbedFrameType = FrameType.VIDEO;
                 } else if (pkt.data() == null && pkt.size() == 0) {
+                    grabbedFrameType = FrameType.EMPTY;
                     return null;
                 }
             } else if (doAudio && audio_st != null && pkt.stream_index() == audio_st.index()) {
@@ -981,6 +992,7 @@ public class FFmpegFrameGrabber extends FrameGrabber {
                 if (len <= 0) {
                     // On error, trash the whole packet
                     pkt2.size(0);
+                    grabbedFrameType = FrameType.EMPTY;
                 } else {
                     pkt2.data(pkt2.data().position(len));
                     pkt2.size(pkt2.size() - len);
@@ -994,6 +1006,9 @@ public class FFmpegFrameGrabber extends FrameGrabber {
                         frame.timestamp = timestamp;
                         frame.keyFrame = samples_frame.key_frame() != 0;
                         frame.opaque = samples_frame;
+                        grabbedFrameType = FrameType.AUDIO;
+                    } else {
+                        grabbedFrameType = FrameType.EMPTY;
                     }
                 }
             }
@@ -1021,4 +1036,5 @@ public class FFmpegFrameGrabber extends FrameGrabber {
 	return pkt;
 
     }
+    
 }
